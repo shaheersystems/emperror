@@ -4,7 +4,7 @@ Domain language for this codebase. Name modules, types, and tests after these te
 
 **Coding agent**: the stateful conversation with the model (`CodingAgent`). Owns message history and runs one turn per user message.
 
-**Turn**: one user message and everything the model does in response: streamed text plus any number of tool calls, capped at `MAX_STEPS`.
+**Turn**: one user message and everything the model does in response: streamed text plus any number of tool calls, capped at `MAX_STEPS`. Only a completed turn joins the history; a failed one is reported once and leaves the history untouched.
 
 **Workspace**: the repository the agent works in, rooted at a directory. Every file operation goes through it, and no path may leave the root (`src/workspace/`).
 

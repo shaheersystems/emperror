@@ -1,7 +1,6 @@
 import { stdout } from "node:process";
 import ora, { type Ora } from "ora";
 import type { AgentEvent, CodingAgent } from "../ai/agent.ts";
-import { env } from "../config/env.ts";
 import { describeToolCall } from "../tools/index.ts";
 import { readPrompt } from "./prompt-box.ts";
 import { banner, describeToolResult, palette, whimsy } from "./theme.ts";
@@ -92,9 +91,12 @@ class TurnRenderer {
  * Run the interactive read-eval-print loop. Each user line is handed to the
  * agent, whose streamed events are rendered to the terminal.
  */
-export async function startRepl(agent: CodingAgent): Promise<void> {
+export async function startRepl(
+  agent: CodingAgent,
+  modelName: string
+): Promise<void> {
 
-  stdout.write(banner(env.GOOGLE_MODEL));
+  stdout.write(banner(modelName));
 
   while (true) {
     // `null` means the user asked to quit (Ctrl+C / EOF).
