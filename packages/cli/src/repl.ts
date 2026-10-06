@@ -1,9 +1,13 @@
 import { stdout } from "node:process";
 import ora, { type Ora } from "ora";
-import type { AgentEvent, CodingAgent } from "../ai/agent.ts";
-import { describeToolCall } from "../tools/index.ts";
+import {
+  describeToolCall,
+  describeToolResult,
+  type AgentEvent,
+  type CodingAgent,
+} from "@emperror/core";
 import { readPrompt } from "./prompt-box.ts";
-import { banner, describeToolResult, palette, whimsy } from "./theme.ts";
+import { banner, palette, whimsy } from "./theme.ts";
 
 /**
  * Renders a single agent turn to the terminal. It owns one spinner that shows a

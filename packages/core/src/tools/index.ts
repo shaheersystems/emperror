@@ -108,3 +108,24 @@ export function describeToolCall(toolName: string, input: unknown): string {
     ? def.describeCall(parsed.data)
     : `Running ${toolName}`;
 }
+
+/** Past-tense line for a finished tool call, e.g. "Edited src/app.ts". */
+export interface ToolResultSummary {
+  ok: boolean;
+  text: string;
+}
+
+/**
+ * Summarize a tool result. Workspace tools return an `Outcome` carrying its own
+ * summary or failure message; anything else renders as a bare success.
+ */
+export function describeToolResult(toolName: string, output: unknown): ToolResultSummary {
+  const out = (output ?? {}) as Record<string, unknown>;
+  if (out.ok === true && typeof out.summary === "string") {
+    return { ok: true, text: out.summary };
+  }
+  if (out.ok === false && typeof out.message === "string") {
+    return { ok: false, text: out.message };
+  }
+  return { ok: true, text: `Ran ${toolName}` };
+}

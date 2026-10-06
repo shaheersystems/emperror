@@ -14,9 +14,9 @@ const MAX_STEPS = 25;
 /** Semantic events emitted while the agent processes a turn. */
 export type AgentEvent =
   | { type: "text"; text: string }
-  | { type: "tool-call"; toolName: string; input: unknown }
-  | { type: "tool-result"; toolName: string; output: unknown }
-  | { type: "tool-error"; toolName: string; error: unknown }
+  | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }
+  | { type: "tool-result"; toolCallId: string; toolName: string; output: unknown }
+  | { type: "tool-error"; toolCallId: string; toolName: string; error: unknown }
   | { type: "error"; error: unknown };
 
 export interface CodingAgentOptions {
@@ -68,6 +68,7 @@ export class CodingAgent {
         case "tool-call":
           onEvent({
             type: "tool-call",
+            toolCallId: part.toolCallId,
             toolName: part.toolName,
             input: part.input,
           });
@@ -75,6 +76,7 @@ export class CodingAgent {
         case "tool-result":
           onEvent({
             type: "tool-result",
+            toolCallId: part.toolCallId,
             toolName: part.toolName,
             output: part.output,
           });
@@ -83,6 +85,7 @@ export class CodingAgent {
           // Input the SDK rejected before `execute` ran (e.g. schema mismatch).
           onEvent({
             type: "tool-error",
+            toolCallId: part.toolCallId,
             toolName: part.toolName,
             error: part.error,
           });

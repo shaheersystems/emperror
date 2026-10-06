@@ -1,24 +1,19 @@
 {
   "name": "emperror-has-no-clothes",
-  "module": "index.ts",
   "type": "module",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "bun run index.ts",
-    "start": "bun run index.ts",
+    "start": "bun run packages/tui/src/main.tsx",
+    "dev": "bun --watch run packages/tui/src/main.tsx",
+    "start:cli": "bun run packages/cli/src/main.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^5"
-  },
-  "dependencies": {
-    "@ai-sdk/google": "^3.0.82",
-    "ai": "^6.0.206",
-    "chalk": "^5.6.2",
-    "dotenv": "^17.4.2",
-    "ora": "^9.4.0",
-    "zod": "^4.4.3"
   }
 }

@@ -2,7 +2,7 @@ import chalk from "chalk";
 
 /**
  * Presentation layer for the CLI: colors, the whimsical "working" verbs, and
- * rendering of tool results as human-readable status lines.
+ * the startup banner.
  * Keeping it here means the REPL stays focused on control flow.
  */
 
@@ -60,28 +60,6 @@ const WHIMSICAL_VERBS = [
 export function whimsy(): string {
   const verb = WHIMSICAL_VERBS[Math.floor(Math.random() * WHIMSICAL_VERBS.length)];
   return `${palette.brand(verb)}${palette.muted("…")}`;
-}
-
-/** Outcome of a finished tool call, ready to render with a check or warning. */
-export interface ToolOutcome {
-  ok: boolean;
-  text: string;
-}
-
-/**
- * Past-tense summary of a completed tool call. Workspace tools return an
- * `Outcome` carrying its own summary or failure message (see src/workspace);
- * anything else renders as a bare success.
- */
-export function describeToolResult(toolName: string, output: unknown): ToolOutcome {
-  const out = (output ?? {}) as Record<string, unknown>;
-  if (out.ok === true && typeof out.summary === "string") {
-    return { ok: true, text: out.summary };
-  }
-  if (out.ok === false && typeof out.message === "string") {
-    return { ok: false, text: out.message };
-  }
-  return { ok: true, text: `Ran ${chalk.bold(toolName)}` };
 }
 
 /** The startup banner. */

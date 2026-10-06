@@ -1,0 +1,17 @@
+{
+  "name": "@emperror/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^3.0.82",
+    "ai": "^6.0.206",
+    "dotenv": "^17.4.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@ai-sdk/provider": "^3.0.0"
+  }
+}
