@@ -1,15 +1,10 @@
 import { stdout } from "node:process";
 import ora, { type Ora } from "ora";
-import { CodingAgent, type AgentEvent } from "../ai/agent.ts";
+import type { AgentEvent, CodingAgent } from "../ai/agent.ts";
 import { env } from "../config/env.ts";
+import { describeToolCall } from "../tools/index.ts";
 import { readPrompt } from "./prompt-box.ts";
-import {
-  banner,
-  describeToolCall,
-  describeToolResult,
-  palette,
-  whimsy,
-} from "./theme.ts";
+import { banner, describeToolResult, palette, whimsy } from "./theme.ts";
 
 /**
  * Renders a single agent turn to the terminal. It owns one spinner that shows a
@@ -60,6 +55,14 @@ class TurnRenderer {
         break;
       }
 
+      case "tool-error": {
+        const message =
+          event.error instanceof Error ? event.error.message : String(event.error);
+        this.spinner.warn(`${event.toolName} failed: ${message}`);
+        this.spinner.start(whimsy());
+        break;
+      }
+
       case "error": {
         const message =
           event.error instanceof Error ? event.error.message : String(event.error);
@@ -89,8 +92,7 @@ class TurnRenderer {
  * Run the interactive read-eval-print loop. Each user line is handed to the
  * agent, whose streamed events are rendered to the terminal.
  */
-export async function startRepl(): Promise<void> {
-  const agent = new CodingAgent();
+export async function startRepl(agent: CodingAgent): Promise<void> {
 
   stdout.write(banner(env.GOOGLE_MODEL));
 

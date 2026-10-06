@@ -28,19 +28,16 @@ calling powered by the [Vercel AI SDK](https://ai-sdk.dev) and Google Gemini.
 │   │   ├── provider.ts  # Configured Google provider + model factory
 │   │   ├── prompts.ts   # System prompt
 │   │   └── agent.ts     # CodingAgent: streamText + tools + history
-│   ├── tools/         # AI SDK tools + shared sandbox
-│   │   ├── index.ts     # Tool registry exposed to the model
-│   │   ├── read-file.ts
-│   │   ├── list-files.ts
-│   │   ├── edit-file.ts
-│   │   └── sandbox.ts
+│   ├── workspace/     # Workspace: sandboxed file operations returning Outcomes
+│   ├── tools/         # AI SDK tool adapters over the workspace (index.ts)
 │   ├── cli/           # Interactive REPL + rendering (repl.ts)
 │   └── app.ts         # Composition root
 ├── index.ts           # Entry point
 └── .env               # Configuration (API keys, settings)
 ```
 
-The layers depend inward: `cli` → `ai` → `tools`/`config`. The interface layer
+The layers depend inward: `cli` → `ai` → `tools` → `workspace`, with `app.ts`
+wiring the workspace root into the tools. The interface layer
 never talks to the model directly; it only drives `CodingAgent` and renders the
 events it emits.
 

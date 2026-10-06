@@ -1,9 +1,8 @@
-import path from "node:path";
 import chalk from "chalk";
 
 /**
  * Presentation layer for the CLI: colors, the whimsical "working" verbs, and
- * the logic that turns raw tool calls/results into human-readable status lines.
+ * rendering of tool results as human-readable status lines.
  * Keeping it here means the REPL stays focused on control flow.
  */
 
@@ -63,73 +62,26 @@ export function whimsy(): string {
   return `${palette.brand(verb)}${palette.muted("…")}`;
 }
 
-/** Shorten an absolute tool path to something repo-relative and readable. */
-function prettyPath(p: unknown): string {
-  if (typeof p !== "string" || p.length === 0) return "";
-  const rel = path.relative(process.cwd(), p);
-  // Fall back to the original if relativizing escaped the repo or emptied it.
-  return rel && !rel.startsWith("..") ? rel : p;
-}
-
-/** Present-tense status shown on the spinner while a tool is running. */
-export function describeToolCall(toolName: string, input: unknown): string {
-  const arg = (input ?? {}) as Record<string, unknown>;
-  switch (toolName) {
-    case "read_file":
-      return `Reading ${chalk.bold(String(arg.filename ?? ""))}`;
-    case "list_files":
-      return `Listing ${chalk.bold(String(arg.path ?? "."))}`;
-    case "create_file":
-      return `Creating ${chalk.bold(String(arg.path ?? ""))}`;
-    case "create_directory":
-      return `Creating directory ${chalk.bold(String(arg.path ?? ""))}`;
-    case "edit_file":
-      return `Editing ${chalk.bold(String(arg.path ?? ""))}`;
-    default:
-      return `Running ${chalk.bold(toolName)}`;
-  }
-}
-
 /** Outcome of a finished tool call, ready to render with a check or warning. */
 export interface ToolOutcome {
   ok: boolean;
   text: string;
 }
 
-/** Past-tense summary of a completed tool call, derived from its result. */
+/**
+ * Past-tense summary of a completed tool call. Workspace tools return an
+ * `Outcome` carrying its own summary or failure message (see src/workspace);
+ * anything else renders as a bare success.
+ */
 export function describeToolResult(toolName: string, output: unknown): ToolOutcome {
   const out = (output ?? {}) as Record<string, unknown>;
-  const target = chalk.bold(prettyPath(out.file_path ?? out.path));
-  const action = typeof out.action === "string" ? out.action : undefined;
-
-  // Failure actions returned by the tools (see src/tools/*). Anything else is
-  // treated as success.
-  switch (action) {
-    case "file_not_found":
-      return { ok: false, text: `Couldn't find ${target}` };
-    case "old_str not found":
-      return { ok: false, text: `No matching text to edit in ${target}` };
-    case "file_already_exists":
-      return { ok: false, text: `${target} already exists` };
+  if (out.ok === true && typeof out.summary === "string") {
+    return { ok: true, text: out.summary };
   }
-
-  switch (toolName) {
-    case "read_file":
-      return { ok: true, text: `Read ${target}` };
-    case "list_files": {
-      const count = Array.isArray(out.files) ? out.files.length : undefined;
-      const suffix = count === undefined ? "" : palette.muted(` (${count} entries)`);
-      return { ok: true, text: `Listed ${target}${suffix}` };
-    }
-    case "create_file":
-      return { ok: true, text: `Created ${target}` };
-    case "create_directory":
-      return { ok: true, text: `Created directory ${target}` };
-    case "edit_file":
-      return { ok: true, text: `Edited ${target}` };
-    default:
-      return { ok: true, text: `Ran ${chalk.bold(toolName)}` };
+  if (out.ok === false && typeof out.message === "string") {
+    return { ok: false, text: out.message };
   }
+  return { ok: true, text: `Ran ${chalk.bold(toolName)}` };
 }
 
 /** The startup banner. */

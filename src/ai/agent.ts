@@ -1,5 +1,4 @@
-import { stepCountIs, streamText, type ModelMessage } from "ai";
-import { tools } from "../tools/index.ts";
+import { stepCountIs, streamText, type ModelMessage, type ToolSet } from "ai";
 import { getModel } from "./provider.ts";
 import { SYSTEM_PROMPT } from "./prompts.ts";
 
@@ -12,6 +11,7 @@ export type AgentEvent =
   | { type: "text"; text: string }
   | { type: "tool-call"; toolName: string; input: unknown }
   | { type: "tool-result"; toolName: string; output: unknown }
+  | { type: "tool-error"; toolName: string; error: unknown }
   | { type: "error"; error: unknown };
 
 /**
@@ -21,6 +21,8 @@ export type AgentEvent =
  */
 export class CodingAgent {
   private readonly messages: ModelMessage[] = [];
+
+  constructor(private readonly tools: ToolSet) {}
 
   async send(
     userInput: string,
@@ -32,7 +34,7 @@ export class CodingAgent {
       model: getModel(),
       system: SYSTEM_PROMPT,
       messages: this.messages,
-      tools,
+      tools: this.tools,
       stopWhen: stepCountIs(MAX_STEPS),
     });
 
@@ -53,6 +55,14 @@ export class CodingAgent {
             type: "tool-result",
             toolName: part.toolName,
             output: part.output,
+          });
+          break;
+        case "tool-error":
+          // Input the SDK rejected before `execute` ran (e.g. schema mismatch).
+          onEvent({
+            type: "tool-error",
+            toolName: part.toolName,
+            error: part.error,
           });
           break;
         case "error":
