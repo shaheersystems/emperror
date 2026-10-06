@@ -1,9 +1,16 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
+import { createShell, MAX_TIMEOUT_MS, type Shell } from "../shell/shell.ts";
 import type { Outcome, Workspace } from "../workspace/workspace.ts";
 
+/** What tools act on. */
+interface ToolContext {
+  workspace: Workspace;
+  shell: Shell;
+}
+
 /**
- * A model-facing tool over the workspace: what the model sees (description,
+ * A model-facing tool over the workspace or shell: what the model sees (description,
  * input schema), what runs, and the status line shown while it runs. Results
  * are always a workspace `Outcome`, so they render without per-tool code.
  */
@@ -12,7 +19,7 @@ interface WorkspaceTool<S extends z.ZodType> {
   inputSchema: S;
   /** Present-tense status, e.g. "Editing src/app.ts". */
   describeCall(input: z.infer<S>): string;
-  run(workspace: Workspace, input: z.infer<S>): Promise<Outcome<object>>;
+  run(context: ToolContext, input: z.infer<S>): Promise<Outcome<object>>;
 }
 
 const defineTool = <S extends z.ZodType>(def: WorkspaceTool<S>) => def;
@@ -26,7 +33,7 @@ const definitions = {
     description: "Read the full contents of a file.",
     inputSchema: z.object({ path: pathArg("File") }),
     describeCall: ({ path }) => `Reading ${path}`,
-    run: (ws, { path }) => ws.readFile(path),
+    run: ({ workspace }, { path }) => workspace.readFile(path),
   }),
 
   list_files: defineTool({
@@ -37,7 +44,7 @@ const definitions = {
       ),
     }),
     describeCall: ({ path }) => `Listing ${path}`,
-    run: (ws, { path }) => ws.listDirectory(path),
+    run: ({ workspace }, { path }) => workspace.listDirectory(path),
   }),
 
   create_file: defineTool({
@@ -49,7 +56,7 @@ const definitions = {
       content: z.string().default("").describe("Content of the new file."),
     }),
     describeCall: ({ path }) => `Creating ${path}`,
-    run: (ws, { path, content }) => ws.createFile(path, content),
+    run: ({ workspace }, { path, content }) => workspace.createFile(path, content),
   }),
 
   create_directory: defineTool({
@@ -58,7 +65,7 @@ const definitions = {
       "changes if it already exists. Use create_file to create files.",
     inputSchema: z.object({ path: pathArg("Directory") }),
     describeCall: ({ path }) => `Creating directory ${path}`,
-    run: (ws, { path }) => ws.createDirectory(path),
+    run: ({ workspace }, { path }) => workspace.createDirectory(path),
   }),
 
   edit_file: defineTool({
@@ -74,14 +81,53 @@ const definitions = {
       new_str: z.string().default("").describe("Replacement text."),
     }),
     describeCall: ({ path }) => `Editing ${path}`,
-    run: (ws, { path, old_str, new_str }) => ws.editFile(path, old_str, new_str),
+    run: ({ workspace }, { path, old_str, new_str }) =>
+      workspace.editFile(path, old_str, new_str),
+  }),
+
+  bash: defineTool({
+    description:
+      "Run a bash command in the repository root and return its exit code and " +
+      "combined stdout/stderr. The user approves every command before it runs. " +
+      "Commands are non-interactive (stdin is closed) and are stopped after " +
+      "timeout_ms. Use the file tools to read, list, create, and edit files.",
+    inputSchema: z.object({
+      command: z.string().min(1).describe("The bash command to run."),
+      timeout_ms: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_TIMEOUT_MS)
+        .optional()
+        .describe(`Timeout in milliseconds. Defaults to 120000, at most ${MAX_TIMEOUT_MS}.`),
+    }),
+    describeCall: ({ command }) => `Running ${showCommand(command)}`,
+    run: ({ shell }, { command, timeout_ms }) => shell.run(command, { timeoutMs: timeout_ms }),
   }),
 };
 
+/**
+ * A command as the user should see it before approving. Control and bidi
+ * characters are escaped, so a carriage return, ANSI escape, or right-to-left
+ * override can't make the command look different from what will run.
+ */
+export function showCommand(command: string): string {
+  return command.replace(
+    /[\x00-\x08\x0b-\x1f\x7f-\x9f\u200B-\u200F\u2028-\u202E\u2066-\u2069\uFEFF]/g,
+    (ch) => `\\u{${ch.codePointAt(0)!.toString(16)}}`
+  );
+}
+
 type ToolName = keyof typeof definitions;
 
-/** The AI SDK tool set exposed to the model, bound to one workspace. */
-export function createTools(workspace: Workspace): ToolSet {
+/**
+ * The AI SDK tool set exposed to the model, bound to one workspace and a shell
+ * rooted at it.
+ */
+export function createTools(
+  workspace: Workspace,
+  shell: Shell = createShell(workspace.root)
+): ToolSet {
   const entries = Object.entries(definitions) as [
     ToolName,
     WorkspaceTool<z.ZodType>,
@@ -92,7 +138,7 @@ export function createTools(workspace: Workspace): ToolSet {
       tool({
         description: def.description,
         inputSchema: def.inputSchema,
-        execute: (input) => def.run(workspace, input),
+        execute: (input) => def.run({ workspace, shell }, input),
       }),
     ])
   );

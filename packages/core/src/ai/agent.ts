@@ -153,7 +153,12 @@ export class CodingAgent {
         {
           ...t,
           execute: async (input: unknown, options: { toolCallId: string }) => {
-            const approved = await authorize({ toolCallId: options.toolCallId, toolName, input });
+            const approved = await authorize({
+              toolCallId: options.toolCallId,
+              toolName,
+              input,
+              canAllowAlways: this.policy.canAllowForProject(toolName),
+            });
             if (!approved) {
               const denied: DeniedCall = {
                 ok: false,

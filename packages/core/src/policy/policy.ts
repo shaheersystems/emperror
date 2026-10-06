@@ -16,7 +16,16 @@ export interface ApprovalRequest {
   toolCallId: string;
   toolName: string;
   input: unknown;
+  /** Whether "allow-always" may be offered; if not, it counts as "allow-once". */
+  canAllowAlways: boolean;
 }
+
+/**
+ * Tools that ask before every call, whatever the settings file says. A blanket
+ * allow for `bash` would let the model run anything unseen, and a cloned repo
+ * could ship a settings file granting it.
+ */
+export const ALWAYS_ASK: ReadonlySet<string> = new Set(["bash"]);
 
 /** How a UI asks the user to approve a tool call. */
 export type RequestApproval = (request: ApprovalRequest) => Promise<ApprovalDecision>;
@@ -27,7 +36,12 @@ export type RequestApproval = (request: ApprovalRequest) => Promise<ApprovalDeci
  */
 export interface ToolPolicy {
   isAllowed(toolName: string): boolean;
-  /** Allow `toolName` from now on, persisting the rule where the policy keeps it. */
+  /** Whether `toolName` may be allowed for the project, i.e. it isn't in `ALWAYS_ASK`. */
+  canAllowForProject(toolName: string): boolean;
+  /**
+   * Allow `toolName` from now on, persisting the rule where the policy keeps it.
+   * Does nothing for a tool that can't be allowed for the project.
+   */
   allowForProject(toolName: string): void;
 }
 
@@ -47,8 +61,11 @@ type Settings = z.infer<typeof settingsSchema>;
 export function createMemoryPolicy(allowed: Iterable<string> = []): ToolPolicy {
   const allow = new Set(allowed);
   return {
-    isAllowed: (toolName) => allow.has(toolName),
-    allowForProject: (toolName) => void allow.add(toolName),
+    isAllowed: (toolName) => canAllowForProject(toolName) && allow.has(toolName),
+    canAllowForProject,
+    allowForProject(toolName) {
+      if (canAllowForProject(toolName)) allow.add(toolName);
+    },
   };
 }
 
@@ -62,7 +79,9 @@ export function createProjectPolicy(root: string): ToolPolicy {
 
   return {
     isAllowed: memory.isAllowed,
+    canAllowForProject,
     allowForProject(toolName) {
+      if (!canAllowForProject(toolName)) return;
       memory.allowForProject(toolName);
       // Re-read so edits made to the file since startup are not overwritten.
       const settings = readSettings(file);
@@ -72,6 +91,10 @@ export function createProjectPolicy(root: string): ToolPolicy {
       writeFileSync(file, JSON.stringify(settings, null, 2) + "\n", "utf8");
     },
   };
+}
+
+function canAllowForProject(toolName: string): boolean {
+  return !ALWAYS_ASK.has(toolName);
 }
 
 function readSettings(file: string): Settings {

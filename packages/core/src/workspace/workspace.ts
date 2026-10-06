@@ -11,7 +11,9 @@ export type FailureCode =
   | "no_match"
   | "ambiguous_match"
   | "invalid_input"
-  | "io_error";
+  | "io_error"
+  | "timed_out"
+  | "shell_unavailable";
 
 /**
  * Result of every workspace operation. Operations never throw: a failure is a

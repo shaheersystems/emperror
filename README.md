@@ -22,6 +22,12 @@ calling powered by the [Vercel AI SDK](https://ai-sdk.dev) and Google Gemini.
   ```json
   { "permissions": { "allow": ["read_file", "list_files"] } }
   ```
+- **Bash tool**: runs commands with bash (Git Bash on Windows) in the repo
+  root. It is guarded rather than sandboxed: every command needs approval and
+  can never be allowed project-wide (not even via `settings.json`). The exact
+  command is shown, with control and bidi characters escaped. Credential-like
+  environment variables are removed and stdin is closed. Commands time out and
+  the process tree is killed, and output is capped.
 - **Typed config**: Environment variables are validated with Zod at startup, so
   misconfiguration fails fast with a clear message.
 
@@ -37,7 +43,8 @@ packages/
 │       ├── index.ts     # Public interface: createConfiguredAgent, events, tool text
 │       ├── config/      # Zod-validated environment configuration
 │       ├── ai/          # CodingAgent (streamText + history), provider, system prompt
-│       ├── tools/       # AI SDK tool adapters over the workspace
+│       ├── tools/       # AI SDK tool adapters over the workspace and shell
+│       ├── shell/       # Guarded bash runner (timeouts, scrubbed env, capped output)
 │       └── workspace/   # Workspace: sandboxed file operations returning Outcomes
 ├── tui/               # @emperror/tui: Ink terminal UI (default)
 │   └── src/             # app.tsx, prompt-input.tsx, transcript.ts, main.tsx

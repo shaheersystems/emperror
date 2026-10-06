@@ -9,6 +9,7 @@ import type {
 } from "@ai-sdk/provider";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { createMemoryPolicy, type ApprovalDecision, type ApprovalRequest } from "../policy/policy.ts";
+import { createShell } from "../shell/shell.ts";
 import { createTools } from "../tools/index.ts";
 import { createWorkspace } from "../workspace/workspace.ts";
 import { CodingAgent, type AgentEvent } from "./agent.ts";
@@ -161,6 +162,31 @@ test("allowing a tool for the project stops asking for it", async () => {
 
   expect(asked.map((r) => r.toolName)).toEqual(["list_files"]);
   expect(policy.isAllowed("list_files")).toBe(true);
+});
+
+test("bash asks every time, even after allow-always", async () => {
+  const model = scripted(
+    call("bash", { command: "echo hi" }),
+    say("first"),
+    call("bash", { command: "echo hi" }),
+    say("second")
+  );
+  const policy = createMemoryPolicy();
+  const agent = new CodingAgent({
+    model,
+    tools: createTools(createWorkspace(root), createShell(root, { bashPath: null })),
+    policy,
+  });
+  const asked: ApprovalRequest[] = [];
+
+  await turn(agent, "run", "allow-always", asked);
+  await turn(agent, "run again", "deny", asked);
+
+  expect(asked.map((r) => [r.toolName, r.canAllowAlways])).toEqual([
+    ["bash", false],
+    ["bash", false],
+  ]);
+  expect(policy.isAllowed("bash")).toBe(false);
 });
 
 test("without an approval handler, tool calls are denied", async () => {
