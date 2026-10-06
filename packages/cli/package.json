@@ -1,0 +1,13 @@
+{
+  "name": "@emperror/cli",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "emperror-cli": "./src/main.ts"
+  },
+  "dependencies": {
+    "@emperror/core": "workspace:*",
+    "chalk": "^5.6.2",
+    "ora": "^9.4.0"
+  }
+}

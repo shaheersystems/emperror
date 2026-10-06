@@ -21,28 +21,25 @@ calling powered by the [Vercel AI SDK](https://ai-sdk.dev) and Google Gemini.
 
 ## Project Structure
 
+A Bun workspace. The agent core has no UI code; each user interface is its own
+package that depends on core's public entry point (`@emperror/core`).
+
 ```text
-├── src/
-│   ├── config/        # Zod-validated environment configuration (env.ts)
-│   ├── ai/            # AI SDK integration
-│   │   ├── provider.ts  # Configured Google provider + model factory
-│   │   ├── prompts.ts   # System prompt
-│   │   └── agent.ts     # CodingAgent: streamText + tools + history
-│   ├── tools/         # AI SDK tools + shared sandbox
-│   │   ├── index.ts     # Tool registry exposed to the model
-│   │   ├── read-file.ts
-│   │   ├── list-files.ts
-│   │   ├── edit-file.ts
-│   │   └── sandbox.ts
-│   ├── cli/           # Interactive REPL + rendering (repl.ts)
-│   └── app.ts         # Composition root
-├── index.ts           # Entry point
-└── .env               # Configuration (API keys, settings)
+packages/
+├── core/              # @emperror/core: the agent, no UI dependencies
+│   └── src/
+│       ├── index.ts     # Public interface: createConfiguredAgent, events, tool text
+│       ├── config/      # Zod-validated environment configuration
+│       ├── ai/          # CodingAgent (streamText + history), provider, system prompt
+│       ├── tools/       # AI SDK tool adapters over the workspace
+│       └── workspace/   # Workspace: sandboxed file operations returning Outcomes
+├── tui/               # @emperror/tui: Ink terminal UI (default)
+│   └── src/             # app.tsx, prompt-input.tsx, transcript.ts, main.tsx
+└── cli/               # @emperror/cli: minimal chalk/ora REPL, also works with piped input
 ```
 
-The layers depend inward: `cli` → `ai` → `tools`/`config`. The interface layer
-never talks to the model directly; it only drives `CodingAgent` and renders the
-events it emits.
+UIs only drive a `CodingAgent` and render the `AgentEvent`s it emits; they never
+talk to the model or the filesystem directly. See `GLOSSARY.md` for the domain terms.
 
 ## Prerequisites
 
@@ -63,17 +60,22 @@ events it emits.
     BASE_URL=                       # optional, for a proxy/gateway
     ```
 
-3.  **Run**:
+3.  **Run** the terminal UI (or `bun run start:cli` for the plain REPL):
     ```bash
-    bun run dev
+    bun run start
+    ```
+
+4.  **Test**:
+    ```bash
+    bun test
     ```
 
 ## Adding New Tools
 
-1.  Create a file in `src/tools/` and define the tool with the AI SDK's `tool()`
-    helper, using a Zod `inputSchema` and an `execute` function. Use
-    `resolveRepoPath` from `sandbox.ts` for any filesystem access.
-2.  Register it under a name in the `tools` object in `src/tools/index.ts`.
+1.  If it touches files, add the operation to the `Workspace` in
+    `packages/core/src/workspace/workspace.ts`, returning an `Outcome`.
+2.  Add an entry to `definitions` in `packages/core/src/tools/index.ts`: a
+    description, a Zod `inputSchema`, a `describeCall` status line, and `run`.
 
-The model automatically receives the new tool's name, description, and schema on
-the next run.
+The model receives the new tool's name, description, and schema on the next run,
+and both UIs render its status and result without further changes.
