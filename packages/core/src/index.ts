@@ -16,6 +16,7 @@ export {
   type DeniedCall,
 } from "./ai/agent.ts";
 export {
+  ALWAYS_ASK,
   createMemoryPolicy,
   createProjectPolicy,
   SETTINGS_PATH,

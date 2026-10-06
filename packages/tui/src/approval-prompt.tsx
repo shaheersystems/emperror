@@ -15,10 +15,14 @@ export interface ApprovalPromptProps {
 export function ApprovalPrompt({ request, onDecide }: ApprovalPromptProps) {
   const options: { decision: ApprovalDecision; label: string }[] = [
     { decision: "allow-once", label: "Yes" },
-    {
-      decision: "allow-always",
-      label: `Yes, and don't ask again for ${request.toolName} in this project`,
-    },
+    ...(request.canAllowAlways
+      ? [
+          {
+            decision: "allow-always" as const,
+            label: `Yes, and don't ask again for ${request.toolName} in this project`,
+          },
+        ]
+      : []),
     { decision: "deny", label: "No" },
   ];
   const [selected, setSelected] = useState(0);

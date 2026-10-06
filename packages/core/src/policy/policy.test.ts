@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createProjectPolicy, SETTINGS_PATH } from "./policy.ts";
+import { createMemoryPolicy, createProjectPolicy, SETTINGS_PATH } from "./policy.ts";
 
 let root: string;
 let settingsFile: string;
@@ -46,6 +46,18 @@ test("other settings in the file are kept", async () => {
     theme: "dark",
     permissions: { allow: ["read_file", "list_files"], note: "x" },
   });
+});
+
+test("bash always asks, even if the settings file allows it", async () => {
+  await mkdir(path.dirname(settingsFile), { recursive: true });
+  await writeFile(settingsFile, JSON.stringify({ permissions: { allow: ["bash"] } }));
+  const policy = createProjectPolicy(root);
+
+  policy.allowForProject("bash");
+
+  expect(policy.canAllowForProject("bash")).toBe(false);
+  expect(policy.isAllowed("bash")).toBe(false);
+  expect(createMemoryPolicy(["bash"]).isAllowed("bash")).toBe(false);
 });
 
 test("an invalid settings file is a readable startup error", async () => {

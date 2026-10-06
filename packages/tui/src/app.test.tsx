@@ -129,7 +129,12 @@ test("a tool call waits for approval, and the chosen option is returned", async 
   const agent: TurnRunner = {
     async send(_input, _onEvent, requestApproval) {
       decisions.push(
-        await requestApproval({ toolCallId: "1", toolName: "read_file", input: { path: "a.ts" } })
+        await requestApproval({
+          toolCallId: "1",
+          toolName: "read_file",
+          input: { path: "a.ts" },
+          canAllowAlways: true,
+        })
       );
     },
   };
@@ -145,4 +150,28 @@ test("a tool call waits for approval, and the chosen option is returned", async 
   expect(decisions).toEqual(["allow-always"]);
   expect(app.lastFrame()).not.toContain("Allow this action?");
   expect(app.lastFrame()).not.toContain("› x");
+});
+
+test("a tool that always asks offers no project-wide option", async () => {
+  const decisions: string[] = [];
+  const agent: TurnRunner = {
+    async send(_input, _onEvent, requestApproval) {
+      decisions.push(
+        await requestApproval({
+          toolCallId: "1",
+          toolName: "bash",
+          input: { command: "bun test" },
+          canAllowAlways: false,
+        })
+      );
+    },
+  };
+  const app = await setup(agent);
+
+  await app.type("run the tests", ENTER);
+  expect(app.lastFrame()).toContain("Running bun test");
+  expect(app.lastFrame()).not.toContain("don't ask again");
+
+  await app.type("2");
+  expect(decisions).toEqual(["deny"]);
 });

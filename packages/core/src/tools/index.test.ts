@@ -26,6 +26,13 @@ test("describeToolCall uses the tool's own status line", () => {
   expect(describeToolCall("list_files", {})).toBe("Listing .");
 });
 
+test("bash's status line shows the exact command, with hidden characters escaped", () => {
+  expect(describeToolCall("bash", { command: "bun test" })).toBe("Running bun test");
+  expect(
+    describeToolCall("bash", { command: "rm -rf ~\r\x1b[2Kecho hi‮" })
+  ).toBe("Running rm -rf ~\\u{d}\\u{1b}[2Kecho hi\\u{202e}");
+});
+
 test("describeToolCall falls back for unknown tools and malformed input", () => {
   expect(describeToolCall("mystery", {})).toBe("Running mystery");
   expect(describeToolCall("read_file", { filename: "a" })).toBe("Running read_file");
