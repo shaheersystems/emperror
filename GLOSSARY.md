@@ -12,4 +12,8 @@ Domain language for this codebase. Name modules, types, and tests after these te
 
 **Tool**: a model-facing adapter over one workspace operation: its name, input schema, status line (`describeCall`), and the outcome it returns (`packages/core/src/tools/`).
 
+**Approval**: the user's answer before a tool call runs: allow once, allow the tool for the whole project, or deny. A denied call never runs; the model gets a failed result with code `denied`.
+
+**Policy**: which tools may run without asking (`ToolPolicy`, `packages/core/src/policy/`). Nothing is allowed by default; "allow for this project" adds the tool to `permissions.allow` in `.emperror/settings.json`.
+
 **Transcript**: the conversation as a UI shows it: rows for user messages, assistant text, tool calls, and errors. Rows are either *done* (final, printed once) or *live* (still streaming or running).

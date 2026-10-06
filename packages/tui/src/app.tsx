@@ -1,14 +1,32 @@
-import type { AgentEvent } from "@emperror/core";
+import type {
+  AgentEvent,
+  ApprovalDecision,
+  ApprovalRequest,
+  RequestApproval,
+} from "@emperror/core";
 import { Box, Static, Text, useApp } from "ink";
 import Spinner from "ink-spinner";
 import { useEffect, useReducer, useState } from "react";
+import { ApprovalPrompt } from "./approval-prompt.tsx";
 import { PromptInput } from "./prompt-input.tsx";
 import { colors, workingVerb } from "./theme.ts";
 import { emptyTranscript, transcriptReducer, type Entry } from "./transcript.ts";
 
-/** What the TUI needs from the core agent: one turn per call, as events. */
+/**
+ * What the TUI needs from the core agent: one turn per call, as events, asking
+ * for approval before tool calls the agent's policy doesn't already allow.
+ */
 export interface TurnRunner {
-  send(input: string, onEvent: (event: AgentEvent) => void): Promise<void>;
+  send(
+    input: string,
+    onEvent: (event: AgentEvent) => void,
+    requestApproval: RequestApproval
+  ): Promise<void>;
+}
+
+interface PendingApproval {
+  request: ApprovalRequest;
+  resolve(decision: ApprovalDecision): void;
 }
 
 export interface AppProps {
@@ -24,6 +42,16 @@ export function App({ agent, modelName, root }: AppProps) {
   const { exit } = useApp();
   const [transcript, dispatch] = useReducer(transcriptReducer, emptyTranscript);
   const [history, setHistory] = useState<string[]>([]);
+  const [approval, setApproval] = useState<PendingApproval | null>(null);
+
+  // The agent asks one call at a time, so at most one approval is pending.
+  const requestApproval: RequestApproval = (request) =>
+    new Promise((resolve) => setApproval({ request, resolve }));
+
+  function decide(decision: ApprovalDecision) {
+    approval?.resolve(decision);
+    setApproval(null);
+  }
 
   async function submit(text: string) {
     const command = text.trim().toLowerCase();
@@ -32,7 +60,7 @@ export function App({ agent, modelName, root }: AppProps) {
     setHistory((h) => [...h, text]);
     dispatch({ type: "submit", text });
     try {
-      await agent.send(text, (event) => dispatch({ type: "agent", event }));
+      await agent.send(text, (event) => dispatch({ type: "agent", event }), requestApproval);
     } catch (error) {
       dispatch({ type: "agent", event: { type: "error", error } });
     } finally {
@@ -58,7 +86,15 @@ export function App({ agent, modelName, root }: AppProps) {
         <EntryView key={entry.id} entry={entry} />
       ))}
 
-      {transcript.busy && <WorkingLine />}
+      {approval ? (
+        <ApprovalPrompt
+          key={approval.request.toolCallId}
+          request={approval.request}
+          onDecide={decide}
+        />
+      ) : (
+        transcript.busy && <WorkingLine />
+      )}
 
       <Box marginTop={1} flexDirection="column">
         <PromptInput
@@ -66,6 +102,7 @@ export function App({ agent, modelName, root }: AppProps) {
           onExit={exit}
           history={history}
           canSubmit={!transcript.busy}
+          isActive={!approval}
         />
         <Text dimColor>
           {"  enter send · \\+enter newline · ↑↓ history · ctrl+c clear/exit"}
