@@ -5,10 +5,25 @@
 import { CodingAgent } from "./ai/agent.ts";
 import { createModel } from "./ai/provider.ts";
 import { loadEnv } from "./config/env.ts";
+import { createProjectPolicy } from "./policy/policy.ts";
 import { createTools } from "./tools/index.ts";
 import { createWorkspace } from "./workspace/workspace.ts";
 
-export { CodingAgent, type AgentEvent, type CodingAgentOptions } from "./ai/agent.ts";
+export {
+  CodingAgent,
+  type AgentEvent,
+  type CodingAgentOptions,
+  type DeniedCall,
+} from "./ai/agent.ts";
+export {
+  createMemoryPolicy,
+  createProjectPolicy,
+  SETTINGS_PATH,
+  type ApprovalDecision,
+  type ApprovalRequest,
+  type RequestApproval,
+  type ToolPolicy,
+} from "./policy/policy.ts";
 export {
   describeToolCall,
   describeToolResult,
@@ -24,7 +39,8 @@ export interface ConfiguredAgent {
 
 /**
  * Build an agent from the environment, working in `root` (default: the
- * current directory). Validates configuration first and throws a readable
+ * current directory), with tool approvals remembered in the project's
+ * `.emperror/settings.json`. Validates configuration first and throws a readable
  * error listing every problem, so a UI can fail fast before it starts.
  */
 export function createConfiguredAgent({
@@ -34,6 +50,7 @@ export function createConfiguredAgent({
   const agent = new CodingAgent({
     model: createModel(env),
     tools: createTools(createWorkspace(root)),
+    policy: createProjectPolicy(root),
   });
   return { agent, modelName: env.GOOGLE_MODEL };
 }

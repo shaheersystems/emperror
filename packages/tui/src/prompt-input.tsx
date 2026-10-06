@@ -11,6 +11,8 @@ export interface PromptInputProps {
   history?: string[];
   /** While false, typing still works but Enter does nothing. */
   canSubmit?: boolean;
+  /** While false, the prompt ignores all input, e.g. while another prompt has focus. */
+  isActive?: boolean;
   placeholder?: string;
 }
 
@@ -24,11 +26,14 @@ export function PromptInput({
   onExit,
   history = [],
   canSubmit = true,
+  isActive = true,
   placeholder = "Ask for a change, or a question about the code",
 }: PromptInputProps) {
   const [state, dispatch] = useReducer(editorReducer, initialEditor);
 
-  usePaste((text) => dispatch({ type: "insert", text: text.replace(/\r\n?/g, "\n") }));
+  usePaste((text) => dispatch({ type: "insert", text: text.replace(/\r\n?/g, "\n") }), {
+    isActive,
+  });
 
   useInput((input, key) => {
     if (key.ctrl && (input === "c" || input === "d")) {
@@ -51,7 +56,7 @@ export function PromptInput({
     }
     const edit = editForKey(input, key);
     if (edit) dispatch(edit);
-  });
+  }, { isActive });
 
   return (
     <Box

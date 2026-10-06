@@ -16,6 +16,12 @@ calling powered by the [Vercel AI SDK](https://ai-sdk.dev) and Google Gemini.
 - **Filesystem tools**: Built-in reading, listing, and editing of files.
 - **Sandboxed by design**: Every tool path is confined to the repo root via a
   shared sandbox.
+- **Human approval**: Every tool call asks first (Yes / Yes, and don't ask
+  again for this tool in this project / No). Project-wide approvals are saved
+  to `.emperror/settings.json`:
+  ```json
+  { "permissions": { "allow": ["read_file", "list_files"] } }
+  ```
 - **Typed config**: Environment variables are validated with Zod at startup, so
   misconfiguration fails fast with a clear message.
 

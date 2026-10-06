@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "list_files",
+      "read_file"
+    ]
+  }
+}

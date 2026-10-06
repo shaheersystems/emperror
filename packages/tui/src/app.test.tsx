@@ -122,3 +122,27 @@ test("a thrown error is shown and the prompt accepts input again", async () => {
   await app.type("second", ENTER);
   expect(calls).toBe(2);
 });
+
+test("a tool call waits for approval, and the chosen option is returned", async () => {
+  const DOWN = "\x1b[B";
+  const decisions: string[] = [];
+  const agent: TurnRunner = {
+    async send(_input, _onEvent, requestApproval) {
+      decisions.push(
+        await requestApproval({ toolCallId: "1", toolName: "read_file", input: { path: "a.ts" } })
+      );
+    },
+  };
+  const app = await setup(agent);
+
+  await app.type("fix a.ts", ENTER);
+  expect(app.lastFrame()).toContain("Allow this action?");
+  expect(app.lastFrame()).toContain("Reading a.ts");
+  expect(app.lastFrame()).toContain("don't ask again for read_file in this project");
+
+  // Typing goes to the approval prompt, not the message box.
+  await app.type("x", DOWN, ENTER);
+  expect(decisions).toEqual(["allow-always"]);
+  expect(app.lastFrame()).not.toContain("Allow this action?");
+  expect(app.lastFrame()).not.toContain("› x");
+});

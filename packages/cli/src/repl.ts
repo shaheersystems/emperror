@@ -4,8 +4,11 @@ import {
   describeToolCall,
   describeToolResult,
   type AgentEvent,
+  type ApprovalDecision,
+  type ApprovalRequest,
   type CodingAgent,
 } from "@emperror/core";
+import { askApproval } from "./approval.ts";
 import { readPrompt } from "./prompt-box.ts";
 import { banner, palette, whimsy } from "./theme.ts";
 
@@ -77,6 +80,16 @@ class TurnRenderer {
     }
   };
 
+  /** Pause the spinner and any open text while the user decides on a tool call. */
+  approve = async (request: ApprovalRequest): Promise<ApprovalDecision> => {
+    const status = this.spinner.text;
+    if (this.spinner.isSpinning) this.spinner.stop();
+    this.closeText();
+    const decision = await askApproval(request);
+    this.spinner.start(status);
+    return decision;
+  };
+
   /** Tear down the turn, clearing any lingering spinner or open text block. */
   finish(): void {
     if (this.spinner.isSpinning) this.spinner.stop();
@@ -115,7 +128,7 @@ export async function startRepl(
     const renderer = new TurnRenderer();
     renderer.start();
     try {
-      await agent.send(userInput, renderer.handle);
+      await agent.send(userInput, renderer.handle, renderer.approve);
     } catch (err) {
       renderer.handle({ type: "error", error: err });
     } finally {

@@ -8,6 +8,7 @@ import type {
   LanguageModelV3StreamResult,
 } from "@ai-sdk/provider";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import { createMemoryPolicy, type ApprovalDecision, type ApprovalRequest } from "../policy/policy.ts";
 import { createTools } from "../tools/index.ts";
 import { createWorkspace } from "../workspace/workspace.ts";
 import { CodingAgent, type AgentEvent } from "./agent.ts";
@@ -66,10 +67,18 @@ function scripted(...results: LanguageModelV3StreamResult[]) {
   return new MockLanguageModelV3({ doStream: async () => results[i++]! });
 }
 
-/** Send one message, collecting the events the agent emits. */
-async function turn(agent: CodingAgent, input: string): Promise<AgentEvent[]> {
+/** Send one message, collecting the events the agent emits; tool calls get `decision`. */
+async function turn(
+  agent: CodingAgent,
+  input: string,
+  decision: ApprovalDecision = "allow-once",
+  asked: ApprovalRequest[] = []
+): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];
-  await agent.send(input, (e) => events.push(e));
+  await agent.send(input, (e) => events.push(e), async (request) => {
+    asked.push(request);
+    return decision;
+  });
   return events;
 }
 
@@ -77,8 +86,8 @@ async function turn(agent: CodingAgent, input: string): Promise<AgentEvent[]> {
 const conversation = (model: MockLanguageModelV3, n: number) =>
   model.doStreamCalls[n]!.prompt.filter((m) => m.role !== "system");
 
-function agentWith(model: MockLanguageModelV3) {
-  return new CodingAgent({ model, tools: createTools(createWorkspace(root)) });
+function agentWith(model: MockLanguageModelV3, policy = createMemoryPolicy()) {
+  return new CodingAgent({ model, tools: createTools(createWorkspace(root)), policy });
 }
 
 test("streams text and carries the exchange into the next turn", async () => {
@@ -122,4 +131,43 @@ test("a failed turn leaves the history untouched", async () => {
   const history = conversation(model, 1);
   expect(history).toHaveLength(1);
   expect(history[0]).toMatchObject({ role: "user", content: [{ type: "text", text: "second" }] });
+});
+
+test("a denied tool call does not run and tells the model why", async () => {
+  const model = scripted(call("create_file", { path: "a.txt", content: "made" }), say("ok"));
+
+  const events = await turn(agentWith(model), "make a file", "deny");
+
+  expect(events[1]).toMatchObject({
+    type: "tool-result",
+    output: { ok: false, code: "denied" },
+  });
+  expect(await Bun.file(path.join(root, "a.txt")).exists()).toBe(false);
+});
+
+test("allowing a tool for the project stops asking for it", async () => {
+  const model = scripted(
+    call("list_files", {}),
+    say("first"),
+    call("list_files", {}),
+    say("second")
+  );
+  const policy = createMemoryPolicy();
+  const agent = agentWith(model, policy);
+  const asked: ApprovalRequest[] = [];
+
+  await turn(agent, "list", "allow-always", asked);
+  await turn(agent, "list again", "deny", asked);
+
+  expect(asked.map((r) => r.toolName)).toEqual(["list_files"]);
+  expect(policy.isAllowed("list_files")).toBe(true);
+});
+
+test("without an approval handler, tool calls are denied", async () => {
+  const model = scripted(call("create_file", { path: "a.txt" }), say("ok"));
+  const events: AgentEvent[] = [];
+
+  await agentWith(model).send("make a file", (e) => events.push(e));
+
+  expect(events[1]).toMatchObject({ type: "tool-result", output: { code: "denied" } });
 });

@@ -5,6 +5,12 @@ import {
   type ModelMessage,
   type ToolSet,
 } from "ai";
+import {
+  createMemoryPolicy,
+  type ApprovalRequest,
+  type RequestApproval,
+  type ToolPolicy,
+} from "../policy/policy.ts";
 import { SYSTEM_PROMPT } from "./prompts.ts";
 
 // Safety cap on tool round-trips per user turn, so a model that keeps emitting
@@ -22,6 +28,15 @@ export type AgentEvent =
 export interface CodingAgentOptions {
   model: LanguageModel;
   tools: ToolSet;
+  /** Tools that run without asking. Defaults to none: every call needs approval. */
+  policy?: ToolPolicy;
+}
+
+/** What a denied tool call returns to the model, shaped like a failed outcome. */
+export interface DeniedCall {
+  ok: false;
+  code: "denied";
+  message: string;
 }
 
 /**
@@ -32,20 +47,26 @@ export interface CodingAgentOptions {
  * A failed turn is reported once, as an "error" event, and is not committed:
  * the history is left as it was before the user's message, so the next turn
  * starts clean.
+ *
+ * Every tool call needs the user's approval unless the policy allows its tool.
+ * Without a `requestApproval` handler, calls the policy doesn't allow are denied.
  */
 export class CodingAgent {
   private readonly messages: ModelMessage[] = [];
   private readonly model: LanguageModel;
   private readonly tools: ToolSet;
+  private readonly policy: ToolPolicy;
 
-  constructor({ model, tools }: CodingAgentOptions) {
+  constructor({ model, tools, policy = createMemoryPolicy() }: CodingAgentOptions) {
     this.model = model;
     this.tools = tools;
+    this.policy = policy;
   }
 
   async send(
     userInput: string,
-    onEvent: (event: AgentEvent) => void
+    onEvent: (event: AgentEvent) => void,
+    requestApproval?: RequestApproval
   ): Promise<void> {
     const userMessage: ModelMessage = { role: "user", content: userInput };
 
@@ -53,7 +74,7 @@ export class CodingAgent {
       model: this.model,
       system: SYSTEM_PROMPT,
       messages: [...this.messages, userMessage],
-      tools: this.tools,
+      tools: this.gateTools(requestApproval),
       stopWhen: stepCountIs(MAX_STEPS),
       // Errors reach the caller as "error" events; skip the SDK's console log.
       onError: () => {},
@@ -106,5 +127,45 @@ export class CodingAgent {
 
     const response = await result.response;
     this.messages.push(userMessage, ...response.messages);
+  }
+
+  /**
+   * Wrap each tool so it runs only once approved. Calls in one step may run in
+   * parallel, so approvals are asked one at a time, and the policy is checked
+   * again after waiting: an earlier "allow-always" may already cover the call.
+   */
+  private gateTools(requestApproval?: RequestApproval): ToolSet {
+    let queue: Promise<unknown> = Promise.resolve();
+    const authorize = (request: ApprovalRequest): Promise<boolean> => {
+      const decided = queue.then(async () => {
+        if (this.policy.isAllowed(request.toolName)) return true;
+        const decision = (await requestApproval?.(request)) ?? "deny";
+        if (decision === "allow-always") this.policy.allowForProject(request.toolName);
+        return decision !== "deny";
+      });
+      queue = decided.catch(() => {});
+      return decided;
+    };
+
+    return Object.fromEntries(
+      Object.entries(this.tools).map(([toolName, t]) => [
+        toolName,
+        {
+          ...t,
+          execute: async (input: unknown, options: { toolCallId: string }) => {
+            const approved = await authorize({ toolCallId: options.toolCallId, toolName, input });
+            if (!approved) {
+              const denied: DeniedCall = {
+                ok: false,
+                code: "denied",
+                message: `The user denied ${toolName}`,
+              };
+              return denied;
+            }
+            return t.execute!(input, options as Parameters<NonNullable<typeof t.execute>>[1]);
+          },
+        },
+      ])
+    );
   }
 }
