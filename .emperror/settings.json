@@ -4,7 +4,8 @@
       "list_files",
       "read_file",
       "find_files",
-      "grep"
+      "grep",
+      "create_file"
     ]
   }
 }
