@@ -2,8 +2,8 @@
  * Public interface of the coding agent core. User interfaces import only from
  * here; nothing in core knows how events are rendered.
  */
-import { CodingAgent } from "./ai/agent.ts";
-import { createModel } from "./ai/provider.ts";
+import { CodingAgent } from "./agent/agent.ts";
+import { createModel } from "./agent/provider.ts";
 import { loadEnv } from "./config/env.ts";
 import { createProjectPolicy } from "./policy/policy.ts";
 import { createTools } from "./tools/index.ts";
@@ -14,7 +14,7 @@ export {
   type AgentEvent,
   type CodingAgentOptions,
   type DeniedCall,
-} from "./ai/agent.ts";
+} from "./agent/agent.ts";
 export {
   ALWAYS_ASK,
   createMemoryPolicy,

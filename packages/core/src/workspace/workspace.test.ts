@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createWorkspace, type Workspace } from "./workspace.ts";
@@ -52,6 +52,36 @@ describe("readFile", () => {
   test("a directory is not_a_file", async () => {
     await ws.createDirectory("dir");
     expect(await ws.readFile("dir")).toMatchObject({ ok: false, code: "not_a_file" });
+  });
+});
+
+describe("secret files", () => {
+  test.each([".env", ".env.local", ".ENV.production", "certs/server.pem", "deploy.key", "id_ed25519", ".npmrc"])(
+    "refuses to read or edit %s",
+    async (p) => {
+      await ws.createFile(p, "API_KEY=hunter2");
+      expect(await ws.readFile(p)).toMatchObject({ ok: false, code: "secret_file" });
+      expect(await ws.editFile(p, "hunter2", "x")).toMatchObject({ ok: false, code: "secret_file" });
+      expect(await contents(p)).toBe("API_KEY=hunter2");
+    }
+  );
+
+  test.each([".env.example", ".env.sample", "id_ed25519.pub", "keys.ts", "environment.ts"])(
+    "allows %s",
+    async (p) => {
+      await ws.createFile(p, "x");
+      expect(await ws.readFile(p)).toMatchObject({ ok: true, content: "x" });
+    }
+  );
+
+  test("refuses a symlink that points to a secret file", async () => {
+    await ws.createFile(".env", "API_KEY=hunter2");
+    try {
+      await symlink(path.join(root, ".env"), path.join(root, "notes.txt"));
+    } catch {
+      return; // Creating symlinks needs extra privileges on Windows.
+    }
+    expect(await ws.readFile("notes.txt")).toMatchObject({ ok: false, code: "secret_file" });
   });
 });
 

@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "list_files",
-      "read_file"
+      "read_file",
+      "find_files",
+      "grep",
+      "create_file"
     ]
   }
 }

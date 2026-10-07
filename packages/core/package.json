@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.82",
+    "@vscode/ripgrep": "1.18.0",
     "ai": "^6.0.206",
     "dotenv": "^17.4.2",
     "zod": "^4.4.3"

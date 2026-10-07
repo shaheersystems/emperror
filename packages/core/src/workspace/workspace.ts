@@ -1,9 +1,10 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /** Why a workspace operation did not apply. Stable, so the model can branch on it. */
 export type FailureCode =
   | "outside_workspace"
+  | "secret_file"
   | "not_found"
   | "already_exists"
   | "not_a_file"
@@ -23,6 +24,41 @@ export type FailureCode =
 export type Outcome<T = {}> =
   | ({ ok: true; path: string; summary: string } & T)
   | { ok: false; path: string; code: FailureCode; message: string };
+
+/**
+ * File names that usually hold credentials: env files (but not their
+ * committed templates), private keys and certificates, and auth configs.
+ */
+const SECRET_FILE =
+  /^(\.env(\.(?!(example|sample|template|dist)$).+)?|.+\.(pem|key|p12|pfx|jks|keystore)|id_(rsa|dsa|ecdsa|ed25519)|\.netrc|\.pgpass|\.npmrc|\.git-credentials)$/i;
+
+/** Whether `filePath`'s name marks it as likely holding secrets. */
+export function isSecretFile(filePath: string): boolean {
+  return SECRET_FILE.test(path.basename(filePath));
+}
+
+/**
+ * Whether the file at absolute path `abs` holds secrets, judged by its own
+ * name and, so a symlink can't disguise one, by the name of the file it
+ * points to.
+ */
+export async function isSecretPath(abs: string): Promise<boolean> {
+  if (isSecretFile(abs)) return true;
+  const target = await realpath(abs).catch(() => abs);
+  return isSecretFile(target);
+}
+
+/**
+ * Resolve a caller-supplied path against `root` (absolute), or `null` if it
+ * escapes. `rel === ".."` or a leading "../" segment means the path left the
+ * root; a sibling such as "..foo" must not be misread as an escape.
+ */
+export function resolveWithin(root: string, userPath: string): string | null {
+  const abs = path.resolve(root, userPath);
+  const rel = path.relative(root, abs);
+  const outside = rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+  return outside ? null : abs;
+}
 
 export interface DirectoryEntry {
   name: string;
@@ -49,21 +85,19 @@ export function createWorkspace(root: string): Workspace {
   const display = (abs: string) =>
     path.relative(absRoot, abs).split(path.sep).join("/") || ".";
 
-  /**
-   * Resolve a caller-supplied path against the root, or `null` if it escapes.
-   * `rel === ".."` or a leading "../" segment means the path left the root; a
-   * sibling such as "..foo" must not be misread as an escape.
-   */
-  function resolve(userPath: string): string | null {
-    const abs = path.resolve(absRoot, userPath);
-    const rel = path.relative(absRoot, abs);
-    const outside =
-      rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
-    return outside ? null : abs;
-  }
+  const resolve = (userPath: string) => resolveWithin(absRoot, userPath);
 
   function fail(shown: string, code: FailureCode, message: string): Outcome<never> {
     return { ok: false, path: shown, code, message };
+  }
+
+  /**
+   * A failure if the file at `abs` holds secrets. Its contents would
+   * otherwise reach the model without the user seeing them.
+   */
+  async function refuseSecret(abs: string, shown: string): Promise<Outcome<never> | null> {
+    if (!(await isSecretPath(abs))) return null;
+    return fail(shown, "secret_file", `${shown} may contain secrets and can't be read or edited`);
   }
 
   /** Map a filesystem error to a failure outcome. */
@@ -107,6 +141,8 @@ export function createWorkspace(root: string): Workspace {
 
     readFile: (filePath) =>
       within(filePath, async (abs, shown) => {
+        const secret = await refuseSecret(abs, shown);
+        if (secret) return secret;
         const content = await readFile(abs, "utf8");
         return { ok: true, path: shown, summary: `Read ${shown}`, content };
       }),
@@ -152,6 +188,9 @@ export function createWorkspace(root: string): Workspace {
         if (oldText.length === 0) {
           return fail(shown, "invalid_input", "Text to replace must not be empty");
         }
+        // Refused too: whether an edit matches would reveal the file's contents.
+        const secret = await refuseSecret(abs, shown);
+        if (secret) return secret;
         const original = await readFile(abs, "utf8");
         const matches = original.split(oldText).length - 1;
         if (matches === 0) {

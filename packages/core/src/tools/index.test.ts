@@ -33,6 +33,12 @@ test("bash's status line shows the exact command, with hidden characters escaped
   ).toBe("Running rm -rf ~\\u{d}\\u{1b}[2Kecho hi\\u{202e}");
 });
 
+test("search tools' status lines show the pattern and any narrowed path", () => {
+  expect(describeToolCall("grep", { pattern: "load\\(" })).toBe("Searching for load\\(");
+  expect(describeToolCall("grep", { pattern: "x", path: "src" })).toBe("Searching for x in src");
+  expect(describeToolCall("find_files", { pattern: "*.test.ts" })).toBe("Finding *.test.ts");
+});
+
 test("describeToolCall falls back for unknown tools and malformed input", () => {
   expect(describeToolCall("mystery", {})).toBe("Running mystery");
   expect(describeToolCall("read_file", { filename: "a" })).toBe("Running read_file");
