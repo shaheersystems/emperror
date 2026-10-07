@@ -10,7 +10,9 @@ Domain language for this codebase. Name modules, types, and tests after these te
 
 **Outcome**: the result of a workspace operation. Either `ok: true` with a `summary`, or `ok: false` with a stable failure `code` and a `message`. Operations return outcomes and never throw, so the model can recover and every UI can render any result the same way.
 
-**Tool**: a model-facing adapter over one workspace operation: its name, input schema, status line (`describeCall`), and the outcome it returns (`packages/core/src/tools/`).
+**Search**: finding text or files in the workspace with ripgrep (`grep`, `find_files`; `packages/core/src/search/`). Like the workspace it stays inside the root and returns outcomes; it skips ignored, hidden, binary, and secret files.
+
+**Tool**: a model-facing adapter over one workspace, search, or shell operation: its name, input schema, status line (`describeCall`), and the outcome it returns (`packages/core/src/tools/`).
 
 **Approval**: the user's answer before a tool call runs: allow once, allow the tool for the whole project, or deny. A denied call never runs; the model gets a failed result with code `denied`.
 

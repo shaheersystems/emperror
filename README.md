@@ -16,6 +16,15 @@ calling powered by the [Vercel AI SDK](https://ai-sdk.dev) and Google Gemini.
 - **Filesystem tools**: Built-in reading, listing, and editing of files.
 - **Sandboxed by design**: Every tool path is confined to the repo root via a
   shared sandbox.
+- **Code search**: `grep` (regex over file contents) and `find_files` (path
+  globs) run [ripgrep](https://github.com/BurntSushi/ripgrep), bundled through
+  `@vscode/ripgrep`. They skip `.gitignore`d, hidden, and binary files, stay
+  inside the repo, and cap their results.
+- **Secret files stay private**: the file tools refuse to read or edit files
+  that likely hold credentials (`.env`, `.env.*` except templates such as
+  `.env.example`, private keys and certificates, `.netrc`, `.npmrc`, ...),
+  including through a symlink, even when `read_file` is allowed project-wide.
+  Search results never include them either.
 - **Human approval**: Every tool call asks first (Yes / Yes, and don't ask
   again for this tool in this project / No). Project-wide approvals are saved
   to `.emperror/settings.json`:
@@ -44,6 +53,7 @@ packages/
 │       ├── config/      # Zod-validated environment configuration
 │       ├── ai/          # CodingAgent (streamText + history), provider, system prompt
 │       ├── tools/       # AI SDK tool adapters over the workspace and shell
+│       ├── search/      # grep and find_files over ripgrep, confined to the workspace
 │       ├── shell/       # Guarded bash runner (timeouts, scrubbed env, capped output)
 │       └── workspace/   # Workspace: sandboxed file operations returning Outcomes
 ├── tui/               # @emperror/tui: Ink terminal UI (default)

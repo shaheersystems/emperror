@@ -1,5 +1,6 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
+import { createSearch, MAX_FILES, MAX_MATCHES, type Search } from "../search/search.ts";
 import { createShell, MAX_TIMEOUT_MS, type Shell } from "../shell/shell.ts";
 import type { Outcome, Workspace } from "../workspace/workspace.ts";
 
@@ -7,12 +8,14 @@ import type { Outcome, Workspace } from "../workspace/workspace.ts";
 interface ToolContext {
   workspace: Workspace;
   shell: Shell;
+  search: Search;
 }
 
 /**
- * A model-facing tool over the workspace or shell: what the model sees (description,
- * input schema), what runs, and the status line shown while it runs. Results
- * are always a workspace `Outcome`, so they render without per-tool code.
+ * A model-facing tool over the workspace, search, or shell: what the model
+ * sees (description, input schema), what runs, and the status line shown while
+ * it runs. Results are always a workspace `Outcome`, so they render without
+ * per-tool code.
  */
 interface WorkspaceTool<S extends z.ZodType> {
   description: string;
@@ -85,12 +88,57 @@ const definitions = {
       workspace.editFile(path, old_str, new_str),
   }),
 
+  grep: defineTool({
+    description:
+      "Search file contents with a regular expression (ripgrep syntax) and return " +
+      `matching lines with their paths and line numbers, at most ${MAX_MATCHES}. ` +
+      "Skips files ignored by .gitignore, hidden files, and binary files. Use it to " +
+      "find definitions, usages, and strings before reading whole files.",
+    inputSchema: z.object({
+      pattern: z
+        .string()
+        .min(1)
+        .describe("Regular expression to search for, e.g. 'function\\s+load'."),
+      path: z
+        .string()
+        .default(".")
+        .describe("Directory or file to search, relative to the repo root. Defaults to the root."),
+      include: z
+        .string()
+        .optional()
+        .describe("Glob limiting which files are searched, e.g. '*.ts' or 'src/**/*.tsx'."),
+      ignore_case: z.boolean().default(false).describe("Match case-insensitively."),
+    }),
+    describeCall: ({ pattern, path }) =>
+      `Searching for ${showCommand(pattern)}` + (path === "." ? "" : ` in ${path}`),
+    run: ({ search }, { pattern, path, include, ignore_case }) =>
+      search.grep(pattern, { path, include, ignoreCase: ignore_case }),
+  }),
+
+  find_files: defineTool({
+    description:
+      "Find files whose paths match a glob, e.g. '*.test.ts' or 'src/**/index.ts', " +
+      `and return their paths, at most ${MAX_FILES}. Skips files ignored by ` +
+      ".gitignore and hidden files.",
+    inputSchema: z.object({
+      pattern: z.string().min(1).describe("Glob to match file paths against."),
+      path: z
+        .string()
+        .default(".")
+        .describe("Directory to search in, relative to the repo root. Defaults to the root."),
+    }),
+    describeCall: ({ pattern, path }) =>
+      `Finding ${showCommand(pattern)}` + (path === "." ? "" : ` in ${path}`),
+    run: ({ search }, { pattern, path }) => search.findFiles(pattern, { path }),
+  }),
+
   bash: defineTool({
     description:
       "Run a bash command in the repository root and return its exit code and " +
       "combined stdout/stderr. The user approves every command before it runs. " +
       "Commands are non-interactive (stdin is closed) and are stopped after " +
-      "timeout_ms. Use the file tools to read, list, create, and edit files.",
+      "timeout_ms. Use the file tools to read, list, create, and edit files, and " +
+      "grep and find_files to search.",
     inputSchema: z.object({
       command: z.string().min(1).describe("The bash command to run."),
       timeout_ms: z
@@ -122,11 +170,12 @@ type ToolName = keyof typeof definitions;
 
 /**
  * The AI SDK tool set exposed to the model, bound to one workspace and a shell
- * rooted at it.
+ * and search rooted at it.
  */
 export function createTools(
   workspace: Workspace,
-  shell: Shell = createShell(workspace.root)
+  shell: Shell = createShell(workspace.root),
+  search: Search = createSearch(workspace.root)
 ): ToolSet {
   const entries = Object.entries(definitions) as [
     ToolName,
@@ -138,7 +187,7 @@ export function createTools(
       tool({
         description: def.description,
         inputSchema: def.inputSchema,
-        execute: (input) => def.run({ workspace, shell }, input),
+        execute: (input) => def.run({ workspace, shell, search }, input),
       }),
     ])
   );
