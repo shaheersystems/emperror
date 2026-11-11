@@ -1,4 +1,9 @@
-import { describeToolCall, describeToolResult, type AgentEvent } from "@emperror/core";
+import {
+  describeToolCall,
+  describeToolResult,
+  type AgentEvent,
+  type ApprovalRequest,
+} from "@emperror/core";
 
 /** One row of the conversation as the TUI shows it. */
 export type Entry =
@@ -8,6 +13,21 @@ export type Entry =
   | { id: number; kind: "error"; text: string };
 
 /**
+ * Where the TUI is in a turn. Exactly one holds at a time:
+ *
+ *   idle ──submit──▶ working ──approval-requested──▶ awaiting-approval
+ *    ▲                 │  ▲                              │
+ *    └────turn-end─────┘  └──────approval-decided────────┘
+ *
+ * `turn-end` also returns to idle from awaiting-approval (the turn failed
+ * while asking). Actions that don't fit the current phase are ignored.
+ */
+export type TurnPhase =
+  | { kind: "idle" }
+  | { kind: "working" }
+  | { kind: "awaiting-approval"; request: ApprovalRequest };
+
+/**
  * The conversation split by mutability: `done` rows never change again (so
  * they can be printed once and scroll away), `live` rows are still streaming
  * or running and are redrawn on every update.
@@ -15,16 +35,24 @@ export type Entry =
 export interface Transcript {
   done: Entry[];
   live: Entry[];
-  busy: boolean;
+  phase: TurnPhase;
   nextId: number;
 }
 
 export type TranscriptAction =
   | { type: "submit"; text: string }
   | { type: "agent"; event: AgentEvent }
+  | { type: "approval-requested"; request: ApprovalRequest }
+  | { type: "approval-decided" }
   | { type: "turn-end" };
 
-export const emptyTranscript: Transcript = { done: [], live: [], busy: false, nextId: 0 };
+const IDLE: TurnPhase = { kind: "idle" };
+const WORKING: TurnPhase = { kind: "working" };
+
+export const emptyTranscript: Transcript = { done: [], live: [], phase: IDLE, nextId: 0 };
+
+/** Whether a turn is running, i.e. a new message can't be sent yet. */
+export const isBusy = (t: Transcript) => t.phase.kind !== "idle";
 
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -32,10 +60,19 @@ const errorText = (error: unknown) =>
 export function transcriptReducer(state: Transcript, action: TranscriptAction): Transcript {
   switch (action.type) {
     case "submit":
-      return { ...push(settle(state), { kind: "user", text: action.text }, "done"), busy: true };
+      if (state.phase.kind !== "idle") return state;
+      return { ...push(settle(state), { kind: "user", text: action.text }, "done"), phase: WORKING };
+
+    case "approval-requested":
+      if (state.phase.kind !== "working") return state;
+      return { ...state, phase: { kind: "awaiting-approval", request: action.request } };
+
+    case "approval-decided":
+      if (state.phase.kind !== "awaiting-approval") return state;
+      return { ...state, phase: WORKING };
 
     case "turn-end":
-      return { ...settle(state), busy: false };
+      return { ...settle(state), phase: IDLE };
 
     case "agent":
       return applyEvent(state, action.event);
