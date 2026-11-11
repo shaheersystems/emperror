@@ -197,3 +197,31 @@ test("without an approval handler, tool calls are denied", async () => {
 
   expect(events[1]).toMatchObject({ type: "tool-result", output: { code: "denied" } });
 });
+
+test("a message sent while a turn runs is refused and leaves the history alone", async () => {
+  const model = scripted(call("list_files", {}), say("listed"), say("second"));
+  const agent = agentWith(model);
+
+  let release!: (decision: ApprovalDecision) => void;
+  const first = agent.send("list", () => {}, () => new Promise((r) => (release = r)));
+  // Wait until the first turn is paused on its approval.
+  while (!release) await new Promise((r) => setTimeout(r, 5));
+  expect(agent.busy).toBe(true);
+
+  const refused = await turn(agent, "interrupting");
+  expect(refused).toHaveLength(1);
+  expect(refused[0]!.type).toBe("error");
+
+  release("allow-once");
+  await first;
+  expect(agent.busy).toBe(false);
+
+  await turn(agent, "next");
+  expect(conversation(model, 2).map((m) => m.role)).toEqual([
+    "user",
+    "assistant",
+    "tool",
+    "assistant",
+    "user",
+  ]);
+});

@@ -79,9 +79,23 @@ export function createShell(root: string, options: ShellOptions = {}): Shell {
 
       return new Promise((resolve) => {
         const output = createOutputBuffer(MAX_OUTPUT_CHARS);
-        let timedOut = false;
-        let settled = false;
-        let graceTimer: ReturnType<typeof setTimeout> | undefined;
+
+        /**
+         * The command's lifecycle. Each phase owns at most one timer, and
+         * `settled` ignores every later event, so the call resolves once:
+         *
+         *   running ──exit──▶ draining ──close / grace──▶ settled (ok)
+         *      │
+         *      └──timeout──▶ killing ──close / grace──▶ settled (timed_out)
+         *
+         * Any phase ──error──▶ settled (io_error).
+         */
+        type Phase =
+          | { kind: "running"; deadline: Timer }
+          | { kind: "draining"; exitCode: number; grace: Timer }
+          | { kind: "killing"; grace: Timer }
+          | { kind: "settled" };
+        type Timer = ReturnType<typeof setTimeout>;
 
         const child = spawn(bash, ["-c", command], {
           cwd,
@@ -92,61 +106,73 @@ export function createShell(root: string, options: ShellOptions = {}): Shell {
           windowsHide: true,
         });
 
-        const finish = (result: Outcome<CommandResult>) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          clearTimeout(graceTimer);
+        const settle = (result: Outcome<CommandResult>) => {
+          if (phase.kind === "settled") return;
+          clearTimeout(phase.kind === "running" ? phase.deadline : phase.grace);
+          phase = { kind: "settled" };
           child.stdout?.destroy();
           child.stderr?.destroy();
           resolve(result);
         };
 
+        /** Resolve from the current phase once output is in (or we stop waiting). */
+        const complete = () => {
+          if (phase.kind === "killing") {
+            settle(
+              fail("timed_out", `Command timed out after ${formatSeconds(limit)} and was stopped`)
+            );
+          } else if (phase.kind === "draining") {
+            const { exitCode } = phase;
+            const truncated = output.truncated();
+            settle({
+              ok: true,
+              path: ".",
+              summary:
+                `Command exited with code ${exitCode}` + (truncated ? " (output truncated)" : ""),
+              exitCode,
+              output: output.text(),
+              truncated,
+            });
+          }
+        };
+
         // On timeout, wait (briefly) for the tree to die so nothing is left
         // running in the workspace when the call returns.
-        const timer = setTimeout(() => {
-          timedOut = true;
-          killTree(child);
-          graceTimer = setTimeout(done, KILL_GRACE_MS);
-        }, limit);
+        let phase: Phase = {
+          kind: "running",
+          deadline: setTimeout(() => {
+            if (phase.kind !== "running") return;
+            killTree(child);
+            phase = { kind: "killing", grace: setTimeout(complete, KILL_GRACE_MS) };
+          }, limit),
+        };
 
         for (const stream of [child.stdout, child.stderr]) {
           stream?.setEncoding("utf8");
           stream?.on("data", (chunk: string) => output.push(chunk));
         }
 
-        child.on("error", (err) => finish(fail("io_error", err.message)));
-
-        let exitCode = 0;
-        const done = () => {
-          if (timedOut) {
-            finish(
-              fail("timed_out", `Command timed out after ${formatSeconds(limit)} and was stopped`)
-            );
-            return;
-          }
-          const truncated = output.truncated();
-          finish({
-            ok: true,
-            path: ".",
-            summary:
-              `Command exited with code ${exitCode}` + (truncated ? " (output truncated)" : ""),
-            exitCode,
-            output: output.text(),
-            truncated,
-          });
-        };
+        child.on("error", (err) => settle(fail("io_error", err.message)));
 
         child.on("exit", (code, signal) => {
-          exitCode = code ?? (signal ? 128 : 1);
           // Don't leave background jobs running after the call returns. Only on
           // POSIX: the process group outlives bash, but on Windows its pid may
           // already belong to an unrelated process.
           if (process.platform !== "win32") killTree(child);
-          clearTimeout(graceTimer);
-          graceTimer = setTimeout(done, EXIT_GRACE_MS);
+          // A background process can hold the pipes open; stop waiting soon.
+          if (phase.kind === "running") {
+            clearTimeout(phase.deadline);
+            phase = {
+              kind: "draining",
+              exitCode: code ?? (signal ? 128 : 1),
+              grace: setTimeout(complete, EXIT_GRACE_MS),
+            };
+          } else if (phase.kind === "killing") {
+            clearTimeout(phase.grace);
+            phase = { kind: "killing", grace: setTimeout(complete, EXIT_GRACE_MS) };
+          }
         });
-        child.on("close", done);
+        child.on("close", complete);
       });
     },
   };

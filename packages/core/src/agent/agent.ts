@@ -48,11 +48,16 @@ export interface DeniedCall {
  * the history is left as it was before the user's message, so the next turn
  * starts clean.
  *
+ * One turn runs at a time: the agent is either idle or running a turn. A
+ * `send` while a turn runs is refused with an "error" event and changes
+ * nothing, since two turns would interleave their messages in the history.
+ *
  * Every tool call needs the user's approval unless the policy allows its tool.
  * Without a `requestApproval` handler, calls the policy doesn't allow are denied.
  */
 export class CodingAgent {
   private readonly messages: ModelMessage[] = [];
+  private state: "idle" | "running" = "idle";
   private readonly model: LanguageModel;
   private readonly tools: ToolSet;
   private readonly policy: ToolPolicy;
@@ -64,6 +69,31 @@ export class CodingAgent {
   }
 
   async send(
+    userInput: string,
+    onEvent: (event: AgentEvent) => void,
+    requestApproval?: RequestApproval
+  ): Promise<void> {
+    if (this.state === "running") {
+      onEvent({
+        type: "error",
+        error: new Error("A turn is already running; wait for it to finish before sending another message"),
+      });
+      return;
+    }
+    this.state = "running";
+    try {
+      await this.runTurn(userInput, onEvent, requestApproval);
+    } finally {
+      this.state = "idle";
+    }
+  }
+
+  /** Whether a turn is running, so `send` would be refused. */
+  get busy(): boolean {
+    return this.state === "running";
+  }
+
+  private async runTurn(
     userInput: string,
     onEvent: (event: AgentEvent) => void,
     requestApproval?: RequestApproval

@@ -6,6 +6,8 @@ Domain language for this codebase. Name modules, types, and tests after these te
 
 **Turn**: one user message and everything the model does in response: streamed text plus any number of tool calls, capped at `MAX_STEPS`. Only a completed turn joins the history; a failed one is reported once and leaves the history untouched.
 
+**Turn phase**: where a UI is in a turn: *idle* (a message can be sent), *working*, or *awaiting approval* (the approval prompt has the keyboard). The core agent itself is only *idle* or *running*, and refuses a second `send` while running. State machines are written as one discriminated `phase`/`mode`/`state` value with its transitions documented beside it, never as several booleans that must agree (`packages/tui/src/transcript.ts`, `packages/cli/src/repl.ts`, `packages/core/src/shell/shell.ts`).
+
 **Workspace**: the repository the agent works in, rooted at a directory. Every file operation goes through it, and no path may leave the root (`packages/core/src/workspace/`).
 
 **Outcome**: the result of a workspace operation. Either `ok: true` with a `summary`, or `ok: false` with a stable failure `code` and a `message`. Operations return outcomes and never throw, so the model can recover and every UI can render any result the same way.

@@ -17,7 +17,7 @@ test("streamed text accumulates in one live assistant row", () => {
     agent({ type: "text", text: "Hel" }),
     agent({ type: "text", text: "lo" })
   );
-  expect(t.busy).toBe(true);
+  expect(t.phase).toEqual({ kind: "working" });
   expect(view(t.done)).toEqual(["user:hi"]);
   expect(view(t.live)).toEqual(["assistant:Hello"]);
 });
@@ -66,7 +66,7 @@ test("turn end settles live rows and marks unfinished tools failed", () => {
     agent({ type: "tool-call", toolCallId: "a", toolName: "list_files", input: {} }),
     { type: "turn-end" }
   );
-  expect(t.busy).toBe(false);
+  expect(t.phase).toEqual({ kind: "idle" });
   expect(t.live).toEqual([]);
   expect(view(t.done).at(-1)).toBe("tool:failed:Listing . (no result)");
 });
@@ -89,4 +89,35 @@ test("row ids stay unique", () => {
   );
   const ids = t.done.map((e) => e.id);
   expect(new Set(ids).size).toBe(ids.length);
+});
+
+const approvalRequest = {
+  toolCallId: "a",
+  toolName: "read_file",
+  input: { path: "a" },
+  canAllowAlways: true,
+};
+
+test("a turn moves through idle, working and awaiting-approval", () => {
+  const asking = run(
+    { type: "submit", text: "go" },
+    { type: "approval-requested", request: approvalRequest }
+  );
+  expect(asking.phase).toEqual({ kind: "awaiting-approval", request: approvalRequest });
+
+  const resumed = transcriptReducer(asking, { type: "approval-decided" });
+  expect(resumed.phase).toEqual({ kind: "working" });
+
+  // A turn that fails while asking still ends cleanly.
+  expect(transcriptReducer(asking, { type: "turn-end" }).phase).toEqual({ kind: "idle" });
+});
+
+test("actions that don't fit the phase are ignored", () => {
+  // No turn is running, so there is nothing to approve.
+  const idle = run({ type: "approval-requested", request: approvalRequest });
+  expect(idle.phase).toEqual({ kind: "idle" });
+
+  // A second message can't start while a turn runs.
+  const t = run({ type: "submit", text: "one" }, { type: "submit", text: "two" });
+  expect(view(t.done)).toEqual(["user:one"]);
 });
